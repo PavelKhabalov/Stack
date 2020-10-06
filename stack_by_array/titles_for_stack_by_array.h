@@ -7,6 +7,7 @@
 #include <iostream>
 #include <math.h>
 
+
 typedef int elem_t;
 
 enum stackErrors { NDERRORS = 0, INV_SIZE = 1, INV_CAP = 2, INV_STACK_ADRESS = 3, INV_ARR_ADRESS = 4, INV_SIZE_AND_CAP = 5, INV_ELEMS = 6 };

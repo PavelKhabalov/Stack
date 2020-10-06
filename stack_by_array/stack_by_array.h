@@ -153,6 +153,7 @@ stackErrors stackOk(stack_t *stack) {
     return NDERRORS;
 }
 
+
 void clearStack(stack_t *stack) {
     ASSERT_STACK(stack)
     for (int i = 0; i < stack->capacity_; i++) {

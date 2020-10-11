@@ -1,6 +1,6 @@
 #include "titles_for_stack_by_array.h"
 
-#define ASSERT_STACK(stack) if (int flag = stackOk(stack)) {printf("Error number: %d\n", flag); dump(stack); assert(!"OK");}
+#define ASSERT_STACK(stack) if (int flag = stackOk(stack)) {printf("Error status: %d\nFile: '%s'\nLine: %d, in '%s' function\n-------------\n", flag, __FILE__, __LINE__, __func__); stackDump(stack, flag); assert(!"OK");}
 #define ARR_END(cap) ((char*) stack->array_ + (cap) * sizeof(elem_t) + 2 * sizeof(canary_t))
 
 
@@ -15,50 +15,53 @@ stack_t *newStack(int64_t capacity) {
 
 //-----------------------------------------------------------------------------
 
-void stackConstruct(stack_t *stack, int64_t capacity) {
+stack_t *stackConstruct(stack_t *stack, int64_t capacity) {
     stack->array_ = (elem_t*) calloc(1, capacity * sizeof(elem_t) + 2 * sizeof(canary_t));
 
     stack->size_ = 0;
     stack->capacity_ = capacity;
 
+    #if DEF_LVL > 0
     stack->opening_canary_ = OP_CANARY;
     stack->ending_canary_ = END_CANARY;
 
+    setCanary(stack->array_, ARR_END(stack->capacity_), OP_ARR_CANARY, END_ARR_CANARY);
+    #endif
+
+    #if DEF_LVL > 1
+    countHashForStack(stack);
+    #endif
     //setMem(stack->array_, END_ARR(stack->capacity_), POISON, sizeof(poison_t));
 
-    setCanary(stack->array_, ARR_END(stack->capacity_), OP_ARR_CANARY, END_ARR_CANARY);
-
-    countHashForStack(stack);
+    return stack;
 
 }
 
 //-----------------------------------------------------------------------------
 
-int push(stack_t *stack, elem_t v) {
-    if (stack->size_ == 0 && stack->capacity_ == 0) {
-        changeCapacity(stack, 4);
-    }
+int stackPush(stack_t *stack, elem_t v) {
     ASSERT_STACK(stack)
 
 
     if (stack->size_ == stack->capacity_) {
-        changeCapacity(stack, stack->capacity_ * 2);
+        changeStackCapacity(stack, max(stack->capacity_ * 2, 4));
     }
     *(elem_t*)((char*) (stack->array_ + stack->size_++) + sizeof(canary_t)) = v;
 
+    #if DEF_LVL > 1
     countHashForStack(stack);
-
+    #endif
     ASSERT_STACK(stack)
     return 0;
 }
 
 //-----------------------------------------------------------------------------
 
-stackErrors changeCapacity(stack_t *stack, int64_t new_capacity) {
+stackErrors changeStackCapacity(stack_t *stack, int64_t new_capacity) {
     assert(new_capacity >= 0);
-
+    #if DEF_LVL > 0
     setCanary(stack->array_, ARR_END(stack->capacity_), 0, 0);
-
+    #endif
     elem_t *new_array = (elem_t*) realloc(stack->array_, new_capacity * sizeof(elem_t) + 2 * sizeof(canary_t));
 
     if (!new_array) {
@@ -70,8 +73,13 @@ stackErrors changeCapacity(stack_t *stack, int64_t new_capacity) {
 
     stack->capacity_ = new_capacity;
 
+    #if DEF_LVL > 0
     setCanary(stack->array_, ARR_END(new_capacity), OP_ARR_CANARY, END_ARR_CANARY);
+    #endif
+
+    #if DEF_LVL > 1
     countHashForStack(stack);
+    #endif
 
     ASSERT_STACK(stack)
     return NDERRORS;
@@ -79,25 +87,25 @@ stackErrors changeCapacity(stack_t *stack, int64_t new_capacity) {
 
 //-----------------------------------------------------------------------------
 
-elem_t top(stack_t *stack) {
+elem_t stackTop(stack_t *stack) {
     ASSERT_STACK(stack)
     return *(stack->array_ + stack->size_ - 1);
 }
 
 //-----------------------------------------------------------------------------
 
-int pop(stack_t *stack) {
+int stackPop(stack_t *stack) {
     ASSERT_STACK(stack)
 
     if (stack->size_ > 0) {
         *(elem_t*) ((char*) (stack->array_ + --stack->size_) + sizeof(canary_t)) = 0;
 
         if (stack->size_ * 4 < stack->capacity_ && stack->capacity_ >= 8) {
-            changeCapacity(stack, stack->capacity_ / 2);
+            changeStackCapacity(stack, stack->capacity_ / 2);
         }
-
+        #if DEF_LVL > 1
         countHashForStack(stack);
-
+        #endif
         ASSERT_STACK(stack)
         return 0;
     } else {
@@ -114,39 +122,127 @@ size_t sizeOfStack(stack_t *stack) {
 
 //-----------------------------------------------------------------------------
 
-stackErrors dump(stack_t *stack) {
+stackErrors stackDump(stack_t *stack, long long status) {
 
+    printf("\n---------begin-of-dump--------\n");
+#if STK_DEBUG == 1
     if (stack) {
         printf("\nAdress: %p\n\n", stack);
     } else {
         fprintf(stderr, "Error: nullptr of stack\n");
         return INV_STACK_ADRESS;
     }
-    printf("OP_ARR_CANARY [%p]: %lli ||| END_ARR_CANARY [%p]: %lli\n", stack->array_, *((canary_t*) stack->array_), (canary_t*) ((char*) stack->array_ + stack->capacity_ * sizeof(elem_t) + 2 * sizeof(canary_t)) - 1, *((canary_t*) ((char*) stack->array_ + stack->capacity_ * sizeof(elem_t) + 2 * sizeof(canary_t)) - 1));
+
+    #if DEF_LVL > 1
+    if (status & INV_HASH_FOR_STK) {
+        hash_t old_h = stack->hash_for_stk_;
+        stack->hash_for_stk_ = 0;
+        printf("Error: incorrect hash for stack: %llu, must be %llu\n", hFunc(stack, stack + 1), old_h);
+        stack->hash_for_stk_ = old_h;
+    } else {
+        printf("Hash for stack: %llu\n", stack->hash_for_stk_);
+    }
+    if (status & INV_HASH_FOR_ARR) {
+        hash_t old_h = stack->hash_for_arr_;
+        stack->hash_for_arr_ = 0;
+        printf("Error: incorrect hash for array: %llu, must be %llu\n", hFunc(stack->array_, ARR_END(stack->capacity_)), old_h);
+        stack->hash_for_arr_ = old_h;
+    } else {
+        printf("Hash for array: %llu\n", stack->hash_for_arr_);
+    }
+    printf("\n");
+    #endif
+
+    #if DEF_LVL > 0
+    if (status & INV_OP_CANARY) {
+        printf("Error: incorrect opening canary of stack: %llu, must be %llu\n", stack->opening_canary_, OP_CANARY);
+    } else {
+        printf("Opening stack canary: %llu\n", stack->opening_canary_);
+    }
+    if (status & INV_END_CANARY) {
+        printf("Error: incorrect ending canary of stack: %llu, must be %llu\n", stack->ending_canary_, END_CANARY);
+    } else {
+        printf("Opening stack canary: %llu\n", stack->ending_canary_);
+    }
+    printf("\n");
+    #endif
+
     if (stack->array_) {
-        printf("Adress of buffer: %p\nSize: %lli   Capacity: %lli\n\n", stack->array_, stack->size_, stack->capacity_);
+        printf("Adress of array: %p\nSize: %lli   Capacity: %lli\n", stack->array_, stack->size_, stack->capacity_);
     } else {
         fprintf(stderr, "Error: nullptr of stack->array_\n");
         return INV_ARR_ADRESS;
     }
 
-    if (stack->size_ < 0) {
-        printf("Error: invalid size\n");
-        return INV_SIZE;
+    if (status & INV_SIZE) {
+        printf("Error: invalid size: %lld\n", stack->size_);
     }
 
-    if (stack->capacity_ < 0) {
-        fprintf(stderr, "Error: invalid capacity\n");
-        return INV_CAP;
+    if (status & INV_CAP) {
+        fprintf(stderr, "Error: invalid capacity: %lld\n", stack->capacity_);
     }
 
-    if (stack->size_ > stack->capacity_) {
-        fprintf(stderr, "Error: invalid size and capacity\n");
-        return INV_SIZE_AND_CAP;
+    if (status & INV_SIZE_AND_CAP) {
+        fprintf(stderr, "Error: invalid size and capacity: %lld > %lld\n", stack->size_, stack->capacity_);
     }
-
+    printf("\n");
+    #if DEF_LVL > 0
+    if (status & INV_OP_ARR_CANARY) {
+        printf("Error: incorrect opening canary of array: %llu, must be %llu\n", *((canary_t*) stack->array_), OP_ARR_CANARY);
+    } else {
+        printf("Opening arr canary: %llu\n", *((canary_t*) stack->array_));
+    }
+    if (status & INV_END_ARR_CANARY) {
+        printf("Error: incorrect ending canary of array: %llu, must be %llu\n", *((canary_t*) (ARR_END(stack->capacity_)) - 1), END_ARR_CANARY);
+    } else {
+        printf("Opening arr canary: %llu\n", *((canary_t*) stack->array_));
+    }
+    #endif
+    printf("\nData of array: ");
     printMem(stack->array_, ARR_END(stack->capacity_));
+#else
+    if (status & INV_STACK_ADRESS) {
+        printf("Error: invalid adress of stack: %p\n", stack);
+        return INV_STACK_ADRESS;
+    }
+    if (status & INV_OP_CANARY) {
+        printf("Error: incorrect opening canary for stack: %llu\n", stack->opening_canary_);
+    }
+    if (status & INV_END_CANARY) {
+        printf("Error: incorrect ending canary for stack: %llu\n", stack->ending_canary_);
+    }
+    if (status & INV_ARR_ADRESS) {
+        printf("Error: invalid adress of array of stack: %p\n", stack->array_);
+    }
+    if (status & INV_SIZE) {
+        printf("Error: invalid size: %lld\n", stack->size_);
+    }
+    if (status & INV_CAP) {
+        printf("Error: invalid capacity: %lld\n", stack->capacity_);
+    }
+    if (status & INV_SIZE_AND_CAP) {
+        printf("Error: invalid size and capacity: %lld > %lld\n", stack->size_, stack->capacity_);
+    }
+    if (status & INV_OP_ARR_CANARY) {
+        printf("Error: incorrect opening canary for array: %llu\n", *(canary_t*) stack->array_);
+    }
+    if (status & INV_END_ARR_CANARY) {
+        printf("Error: incorrect ending canary for array: %llu\n", *(canary_t*) (ARR_END(stack->capacity_)));
+    }
+    if (status & INV_HASH_FOR_STK) {
+        hash_t old_h = stack->hash_for_stk_;
+        stack->hash_for_stk_ = 0;
+        printf("Error: incorrect hash for stack: %llu, must be %llu\n", hFunc(stack, stack + 1), old_h);
+        stack->hash_for_stk_ = old_h;
+    }
+    if (status & INV_HASH_FOR_ARR) {
+        hash_t old_h = stack->hash_for_arr_;
+        stack->hash_for_arr_ = 0;
+        printf("Error: incorrect hash for array: %llu, must be %llu\n", hFunc(stack->array_, ARR_END(stack->capacity_)), old_h);
+        stack->hash_for_arr_ = old_h;
+    }
 
+#endif
     printf("Elems:\n");
     for (int i = 0; i < stack->capacity_; i++) {
         printf("%d  %p: ", i, (elem_t*) ((char*) stack->array_ + sizeof(canary_t)) + i);
@@ -156,7 +252,7 @@ stackErrors dump(stack_t *stack) {
         printf("\n");
 
     }
-    printf("\n");
+    printf("\n---------end-of-dump--------\n");
 
     return NDERRORS;
 
@@ -164,45 +260,57 @@ stackErrors dump(stack_t *stack) {
 
 //-----------------------------------------------------------------------------
 
-stackErrors stackOk(stack_t *stack) {
+long long stackOk(stack_t *stack) {
+
+    long long status = 0;
+
     if (stack == NULL) {
-        return INV_STACK_ADRESS;
+        status = status | INV_STACK_ADRESS;
+        return status;
     }
+
     if (stack->size_ < 0) {
-        return INV_SIZE;
+        status = status | INV_SIZE;
     }
     if (stack->capacity_ < 0) {
-        return INV_CAP;
+        status = status | INV_CAP;
     }
     if (stack->size_ > stack->capacity_) {
-        return INV_SIZE_AND_CAP;
+        status = status | INV_SIZE_AND_CAP;
     }
-    if (stack->array_ == NULL) {
-        return INV_ARR_ADRESS;
-    }
-
+    #if DEF_LVL > 0
     if (stack->opening_canary_ != OP_CANARY) {
-        return INV_OP_CANARY;
+        status = status | INV_OP_CANARY;
     }
     if (stack->ending_canary_ != END_CANARY) {
-        return INV_END_CANARY;
+        status = status | INV_END_CANARY;
     }
+    #endif
 
+    #if DEF_LVL > 1
+    if (!checkHash(stack, stack + 1, &(stack->hash_for_stk_))) {
+        status = status | INV_HASH_FOR_STK;
+    }
+    #endif
+
+    if (stack->array_ == NULL) {
+        status = status | INV_ARR_ADRESS;
+        return status;
+    }
+    #if DEF_LVL > 0
     if (*((canary_t*) stack->array_) != OP_ARR_CANARY) {
-        return INV_OP_ARR_CANARY;
+        status = status | INV_OP_ARR_CANARY;
     }
     if (*((canary_t*) (ARR_END(stack->capacity_)) - 1) != END_ARR_CANARY) {
-        return INV_END_ARR_CANARY;
+        status = status | INV_END_ARR_CANARY;
     }
+    #endif
 
-
-    if (!checkHash(stack, stack + 1, &(stack->hash_for_stk_))) {
-        return INV_HASH_FOR_STK;
-    }
+    #if DEF_LVL > 1
     if (!checkHash(stack->array_, ARR_END(stack->capacity_), &(stack->hash_for_arr_))) {
-        return INV_HASH_FOR_ARR;
+        status = status | INV_HASH_FOR_ARR;
     }
-
+    #endif
     /*
     bool flag = false;
     for (poison_t *i = (poison_t*) ((char*) stack->array_ + sizeof(canary_t)); i < END_ARR(stack->capacity_) - sizeof(canary_t); i++) {
@@ -212,7 +320,7 @@ stackErrors stackOk(stack_t *stack) {
         }
     }
     */
-    return NDERRORS;
+    return status;
 }
 
 //-----------------------------------------------------------------------------
@@ -222,9 +330,11 @@ void clearStack(stack_t *stack) {
     for (int i = 0; i < stack->capacity_; i++) {
         stack->array_[i] = NAN;
     }
-    changeCapacity(stack, 0);
+    changeStackCapacity(stack, 0);
     stack->size_ = 0;
+    #if DEF_LVL > 1
     countHashForStack(stack);
+    #endif
 
 }
 
@@ -284,7 +394,6 @@ void setCanary(void *begin, void *end, canary_t op_canary, canary_t end_canary) 
 //-----------------------------------------------------------------------------
 
 void printMem(void *begin, void *end) {
-    printf("%p  %p\n", begin, end);
     for (unsigned char *j = (unsigned char*) end - 1; j >= begin; j--) {
         printf("%02X", *j);
     }

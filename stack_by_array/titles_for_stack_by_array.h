@@ -7,9 +7,12 @@
 #include <iostream>
 #include <math.h>
 
+#define max(a, b) (((a) > (b)) ? (a): (b))
 
+#define STK_DEBUG 0
+#define DEF_LVL 2
 
-enum stackErrors { NDERRORS = 0, INV_SIZE = 1, INV_CAP = 2, INV_STACK_ADRESS = 3, INV_ARR_ADRESS = 4, INV_SIZE_AND_CAP = 5, INV_ELEMS = 6, INV_OP_CANARY = 7, INV_END_CANARY = 8, INV_OP_ARR_CANARY = 9, INV_END_ARR_CANARY = 10, INV_HASH_FOR_STK = 11, INV_HASH_FOR_ARR = 12, REALLOC_ERROR = 13 };
+enum stackErrors { NDERRORS = 0, INV_STACK_ADRESS = 1, INV_ARR_ADRESS = 1 << 1, INV_SIZE = 1 << 2, INV_CAP = 1 << 3, INV_SIZE_AND_CAP = 1 << 4, INV_OP_CANARY = 1 << 5, INV_END_CANARY = 1 << 6, INV_OP_ARR_CANARY = 1 << 7, INV_END_ARR_CANARY = 1 << 8, INV_HASH_FOR_STK = 1 << 9, INV_HASH_FOR_ARR = 1 << 10, REALLOC_ERROR = 13 };
 
 
 
@@ -38,17 +41,17 @@ typedef struct {
 
 
 
-void stackConstruct(stack_t *stack, int64_t capacity);
+stack_t *stackConstruct(stack_t *stack, int64_t capacity);
 
 stack_t *newStack(int64_t capacity);
 
-stackErrors stackOk(stack_t *stack);
+long long stackOk(stack_t *stack);
 
-int push(stack_t *stack, elem_t v);
+int stackPush(stack_t *stack, elem_t v);
 
-elem_t top(stack_t *stack);
+elem_t stackTop(stack_t *stack);
 
-int pop(stack_t *stack);
+int stackPop(stack_t *stack);
 
 size_t sizeOfStack(stack_t *stack);
 
@@ -56,9 +59,9 @@ void destroyStack(stack_t *stack);
 
 void clearStack(stack_t *stack);
 
-stackErrors dump(stack_t *stack);
+stackErrors stackDump(stack_t *stack, long long status);
 
-stackErrors changeCapacity(stack_t *stack, int64_t new_capacity);
+stackErrors changeStackCapacity(stack_t *stack, int64_t new_capacity);
 
 hash_t hFunc(void *begin, void *end);
 
